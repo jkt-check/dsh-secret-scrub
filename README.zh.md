@@ -12,7 +12,50 @@ npm install dsh-secret-scrub
 
 运行时依赖为 `@deepseek-ai/cordis`(peer）和 `@deepseek-ai/schemastery`。`@deepseek-ai/dsh-*` 系列 peer 包仅为类型依赖且可选。
 
-## 作为 Cordis 插件使用
+## 在 dsh profile 中使用
+
+当前已发布的 `@deepseek-ai/dsh` 的 base bundle **尚未内置 secret-scrub**，需要手动把本插件加到 profile 里。
+
+```sh
+# 1. 安装 dsh CLI
+npm i -g @deepseek-ai/dsh@0.1.2-alpha.4
+
+# 2. 初始化 headless profile（会创建 ~/.dsh/profiles/headless）
+dsh --dump-config --profile headless >/dev/null
+
+# 3. 把插件装到 profile 里
+#    发布到 npm 前，使用 npm pack 生成的 tarball：
+dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
+#    发布到 npm 后，可以直接：
+#    dsh plugin --profile headless add dsh-secret-scrub
+
+# 4. 在 profile 补丁层挂载插件
+cat > ~/.dsh/profiles/headless/cordis.patch.yml <<'EOF'
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+- insert:
+    - id: secret-scrub
+      name: dsh-secret-scrub
+      config:
+        level: aggressive
+        extra:
+          - category: internal-token
+            pattern: 'internal-[0-9]{4}'
+EOF
+
+# 5. 验证 profile 能正常解析
+dsh --dump-config --profile headless >/dev/null && echo OK
+
+# 6. 运行包含敏感信息的任务——密钥会在进入模型/会话日志前被脱敏
+dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE and internal-1234"
+```
+
+注意：`cordis.patch.yml` 必须是一个顶层 YAML 数组。dsh 初始化 profile 时生成的占位符 `[]` 必须整个删掉，用上面的 `- insert:` 块替代，否则 YAML 解析会报错。
+
+## 作为独立 Cordis 插件使用
+
+如果你不使用 dsh，也可以直接挂载到 Cordis Context 上：
 
 ```ts
 import { Context } from '@deepseek-ai/cordis'

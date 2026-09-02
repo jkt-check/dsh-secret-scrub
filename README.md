@@ -12,7 +12,50 @@ npm install dsh-secret-scrub
 
 Runtime dependencies are `@deepseek-ai/cordis` (peer) and `@deepseek-ai/schemastery`. The `@deepseek-ai/dsh-*` peer packages are type-only and optional.
 
-## Use as a Cordis plugin
+## Use with dsh
+
+The current published `@deepseek-ai/dsh` does **not** ship `secret-scrub` in its base bundle yet, so you need to add this plugin to a profile manually.
+
+```sh
+# 1. Install the dsh CLI
+npm i -g @deepseek-ai/dsh@0.1.2-alpha.4
+
+# 2. Initialize the headless profile (creates ~/.dsh/profiles/headless)
+dsh --dump-config --profile headless >/dev/null
+
+# 3. Install this plugin into the profile
+#    Before npm publish, use the tarball built by `npm pack`:
+dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
+#    After npm publish, you can simply run:
+#    dsh plugin --profile headless add dsh-secret-scrub
+
+# 4. Mount it in the profile patch layer
+cat > ~/.dsh/profiles/headless/cordis.patch.yml <<'EOF'
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+- insert:
+    - id: secret-scrub
+      name: dsh-secret-scrub
+      config:
+        level: aggressive
+        extra:
+          - category: internal-token
+            pattern: 'internal-[0-9]{4}'
+EOF
+
+# 5. Verify the profile parses
+dsh --dump-config --profile headless >/dev/null && echo OK
+
+# 6. Run a task that contains secrets — they will be redacted before reaching the model/session log
+dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE and internal-1234"
+```
+
+Important: `cordis.patch.yml` must be a single top-level YAML array. Do not keep the placeholder `[]` that dsh creates when initializing the profile; replace it entirely with the `- insert:` block above.
+
+## Use as a standalone Cordis plugin
+
+If you are not using dsh, you can also mount the plugin directly on a Cordis context:
 
 ```ts
 import { Context } from '@deepseek-ai/cordis'
