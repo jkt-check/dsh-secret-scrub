@@ -79,4 +79,4 @@ npm run build
 
 ## License
 
-[MIT](LICENSE) — Copyright (c) 2026 DeepSeek
+[MIT](LICENSE) — Copyright (c) 2026 jkt-check
