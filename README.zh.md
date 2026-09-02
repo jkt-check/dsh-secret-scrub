@@ -24,10 +24,9 @@ npm i -g @deepseek-ai/dsh
 dsh --dump-config --profile headless >/dev/null
 
 # 3. 把插件装到 profile 里
-#    发布到 npm 前，使用 npm pack 生成的 tarball：
-dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
-#    发布到 npm 后，可以直接：
-#    dsh plugin --profile headless add dsh-secret-scrub
+dsh plugin --profile headless add dsh-secret-scrub
+#    发布前想测试本地改动，可用 npm pack 生成的 tarball：
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
 
 # 4. 在 profile 补丁层挂载插件
 cat > ~/.dsh/profiles/headless/cordis.patch.yml <<'EOF'

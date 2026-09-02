@@ -24,10 +24,9 @@ npm i -g @deepseek-ai/dsh
 dsh --dump-config --profile headless >/dev/null
 
 # 3. Install this plugin into the profile
-#    Before npm publish, use the tarball built by `npm pack`:
-dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
-#    After npm publish, you can simply run:
-#    dsh plugin --profile headless add dsh-secret-scrub
+dsh plugin --profile headless add dsh-secret-scrub
+#    To test local changes before publishing, use the tarball from `npm pack`:
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
 
 # 4. Mount it in the profile patch layer
 cat > ~/.dsh/profiles/headless/cordis.patch.yml <<'EOF'
