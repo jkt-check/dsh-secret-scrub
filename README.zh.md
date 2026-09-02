@@ -18,7 +18,7 @@ npm install dsh-secret-scrub
 
 ```sh
 # 1. 安装 dsh CLI
-npm i -g @deepseek-ai/dsh@0.1.2-alpha.4
+npm i -g @deepseek-ai/dsh
 
 # 2. 初始化 headless profile（会创建 ~/.dsh/profiles/headless）
 dsh --dump-config --profile headless >/dev/null

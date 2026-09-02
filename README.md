@@ -18,7 +18,7 @@ The current published `@deepseek-ai/dsh` does **not** ship `secret-scrub` in its
 
 ```sh
 # 1. Install the dsh CLI
-npm i -g @deepseek-ai/dsh@0.1.2-alpha.4
+npm i -g @deepseek-ai/dsh
 
 # 2. Initialize the headless profile (creates ~/.dsh/profiles/headless)
 dsh --dump-config --profile headless >/dev/null
