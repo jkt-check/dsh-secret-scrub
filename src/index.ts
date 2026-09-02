@@ -195,11 +195,7 @@ export function apply(ctx: Context, config: Config): void {
     const scrubbed = scrubBlocks(content, rules)
     if (scrubbed.blocks === content) return decision
     logRedactions(`tools/post-execute ${exec.name}`, scrubbed.redactions)
-    return {
-      kind: 'accept',
-      content: scrubbed.blocks,
-      ...decision.additionalContexts ? { additionalContexts: decision.additionalContexts } : {},
-    }
+    return { ...decision, content: scrubbed.blocks }
   }, { prepend: true })
 
   // The durable-log arm: the program already received the complete value, so
