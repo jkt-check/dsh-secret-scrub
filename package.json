@@ -39,6 +39,19 @@
   "engines": {
     "node": "^22.19 || >=24"
   },
+  "author": "jkt-check",
+  "keywords": [
+    "dsh",
+    "cordis",
+    "secret",
+    "redaction",
+    "scrubber",
+    "plugin"
+  ],
+  "homepage": "https://github.com/jkt-check/dsh-secret-scrub#readme",
+  "bugs": {
+    "url": "https://github.com/jkt-check/dsh-secret-scrub/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.2"
