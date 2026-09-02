@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Irreversible secret-scrubbing guard plugin, extracted from [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) (`packages/guard/secret-scrub`). It rewrites text on its way to the session log and the model: when a configured rule matches a secret-shaped fragment — an access key, a bearer token, a private key block — the fragment is replaced irreversibly with a `[REDACTED:<category>]` placeholder, so the durable log and the model request carry only the placeholder at the covered points.
+Irreversible secret-scrubbing guard plugin, extracted from the user-sensitive-information protection strategy of the [kaya-ai-terminal](https://github.com/jkt-check/kaya-ai-terminal) project and open-sourced standalone (Mainland China site: https://www.yunhouai.com; international site: https://www.yunhou.ai). It rewrites text on its way to the session log and the model: when a configured rule matches a secret-shaped fragment — an access key, a bearer token, a private key block — the fragment is replaced irreversibly with a `[REDACTED:<category>]` placeholder, so the durable log and the model request carry only the placeholder at the covered points.
 
 ## Install
 

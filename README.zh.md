@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-不可逆的密钥脱敏守护插件，抽自 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)(`packages/guard/secret-scrub`)。它在文本流向会话日志和模型请求的路上进行改写：当配置的规则命中形似密钥的片段——访问密钥、Bearer 令牌、私钥块——该片段会被不可逆地替换为 `[REDACTED:<category>]` 占位符，使持久日志和模型请求在被覆盖的位置只携带占位符。
+不可逆的密钥脱敏守护插件，源自 [kaya-ai-terminal](https://github.com/jkt-check/kaya-ai-terminal) 项目的用户敏感信息保护策略，现独立开源（大陆官网：https://www.yunhouai.com；非大陆地区官网：https://www.yunhou.ai）。它在文本流向会话日志和模型请求的路上进行改写：当配置的规则命中形似密钥的片段——访问密钥、Bearer 令牌、私钥块——该片段会被不可逆地替换为 `[REDACTED:<category>]` 占位符，使持久日志和模型请求在被覆盖的位置只携带占位符。
 
 ## 安装
 
