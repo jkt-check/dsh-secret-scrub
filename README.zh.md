@@ -14,43 +14,31 @@ npm install dsh-secret-scrub
 
 ## 在 dsh profile 中使用
 
-当前已发布的 `@deepseek-ai/dsh` 的 base bundle **尚未内置 secret-scrub**，需要手动把本插件加到 profile 里。
+本包声明了 `dsh.bundle.patch`，一条命令装完即用（默认 `balanced` 级别脱敏，无需任何凭据）：
 
 ```sh
 # 1. 安装 dsh CLI
 npm i -g @deepseek-ai/dsh
 
-# 2. 初始化 headless profile（会创建 ~/.dsh/profiles/headless）
-dsh --dump-config --profile headless >/dev/null
-
-# 3. 把插件装到 profile 里
+# 2. 把插件装到目标 profile 里（以 headless 为例）
 dsh plugin --profile headless add dsh-secret-scrub
 #    发布前想测试本地改动，可用 npm pack 生成的 tarball：
-#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.1.tgz
 
-# 4. 在 profile 补丁层挂载插件
-cat > ~/.dsh/profiles/headless/cordis.patch.yml <<'EOF'
-# Your patch layer for this dsh profile, applied after every bundle layer:
-# a top-level YAML array of loader patch entries (id-targeted config
-# overrides, disables, and insert lists; `!!js` expressions allowed).
-- insert:
-    - id: secret-scrub
-      name: dsh-secret-scrub
-      config:
-        level: aggressive
-        extra:
-          - category: internal-token
-            pattern: 'internal-[0-9]{4}'
-EOF
-
-# 5. 验证 profile 能正常解析
-dsh --dump-config --profile headless >/dev/null && echo OK
-
-# 6. 运行包含敏感信息的任务——密钥会在进入模型/会话日志前被脱敏
-dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE and internal-1234"
+# 3. 重启该 profile 后，运行包含敏感信息的任务——密钥会在进入模型/会话日志前被脱敏
+dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE"
 ```
 
-注意：`cordis.patch.yml` 必须是一个顶层 YAML 数组。dsh 初始化 profile 时生成的占位符 `[]` 必须整个删掉，用上面的 `- insert:` 块替代，否则 YAML 解析会报错。
+`dsh plugin add` 会自动应用包内的 `cordis.patch.yml`（以 `balanced` 级别挂载插件）。想调整级别或追加自定义规则，可在 profile 补丁层 `~/.dsh/profiles/headless/cordis.patch.yml` 中覆盖同 id 的配置：
+
+```yaml
+- id: secret-scrub
+  config:
+    level: aggressive
+    extra:
+      - category: internal-token
+        pattern: 'internal-[0-9]{4}'
+```
 
 ## 作为独立 Cordis 插件使用
 

@@ -14,43 +14,31 @@ Runtime dependencies are `@deepseek-ai/cordis` (peer) and `@deepseek-ai/schemast
 
 ## Use with dsh
 
-The current published `@deepseek-ai/dsh` does **not** ship `secret-scrub` in its base bundle yet, so you need to add this plugin to a profile manually.
+This package declares `dsh.bundle.patch`, so installation is a single command — the plugin activates with the default `balanced` scrub level and needs no credentials:
 
 ```sh
 # 1. Install the dsh CLI
 npm i -g @deepseek-ai/dsh
 
-# 2. Initialize the headless profile (creates ~/.dsh/profiles/headless)
-dsh --dump-config --profile headless >/dev/null
-
-# 3. Install this plugin into the profile
+# 2. Install this plugin into the target profile (headless shown as an example)
 dsh plugin --profile headless add dsh-secret-scrub
 #    To test local changes before publishing, use the tarball from `npm pack`:
-#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.0.tgz
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.1.tgz
 
-# 4. Mount it in the profile patch layer
-cat > ~/.dsh/profiles/headless/cordis.patch.yml <<'EOF'
-# Your patch layer for this dsh profile, applied after every bundle layer:
-# a top-level YAML array of loader patch entries (id-targeted config
-# overrides, disables, and insert lists; `!!js` expressions allowed).
-- insert:
-    - id: secret-scrub
-      name: dsh-secret-scrub
-      config:
-        level: aggressive
-        extra:
-          - category: internal-token
-            pattern: 'internal-[0-9]{4}'
-EOF
-
-# 5. Verify the profile parses
-dsh --dump-config --profile headless >/dev/null && echo OK
-
-# 6. Run a task that contains secrets — they will be redacted before reaching the model/session log
-dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE and internal-1234"
+# 3. Restart the profile, then run a task that contains secrets — they will be redacted before reaching the model/session log
+dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE"
 ```
 
-Important: `cordis.patch.yml` must be a single top-level YAML array. Do not keep the placeholder `[]` that dsh creates when initializing the profile; replace it entirely with the `- insert:` block above.
+`dsh plugin add` applies the `cordis.patch.yml` shipped inside this package (mounting the plugin at `balanced` level). To change the level or add custom rules, override the same id in the profile patch layer `~/.dsh/profiles/headless/cordis.patch.yml`:
+
+```yaml
+- id: secret-scrub
+  config:
+    level: aggressive
+    extra:
+      - category: internal-token
+        pattern: 'internal-[0-9]{4}'
+```
 
 ## Use as a standalone Cordis plugin
 

@@ -1,0 +1,8 @@
+# Bundle patch layer for dsh-secret-scrub, applied automatically when this
+# package is installed via `dsh plugin add`. Top-level YAML array of loader
+# patch entries.
+- insert:
+    - id: secret-scrub
+      name: dsh-secret-scrub
+      config:
+        level: balanced

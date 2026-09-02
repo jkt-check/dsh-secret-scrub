@@ -1,7 +1,12 @@
 {
   "name": "dsh-secret-scrub",
   "description": "Secret-scrubbing guard plugin: irreversible regex redaction of secrets before session-log persistence and model requests",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -28,7 +33,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "cordis.patch.yml"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -42,11 +48,17 @@
   "author": "jkt-check",
   "keywords": [
     "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
     "cordis",
     "secret",
+    "secrets",
     "redaction",
     "scrubber",
-    "plugin"
+    "plugin",
+    "privacy",
+    "security",
+    "llm"
   ],
   "homepage": "https://github.com/jkt-check/dsh-secret-scrub#readme",
   "bugs": {
@@ -65,11 +77,21 @@
     "@deepseek-ai/dsh-tools": ">=0.1.2-alpha.2 <0.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-agent": { "optional": true },
-    "@deepseek-ai/dsh-invariants": { "optional": true },
-    "@deepseek-ai/dsh-llm": { "optional": true },
-    "@deepseek-ai/dsh-session": { "optional": true },
-    "@deepseek-ai/dsh-tools": { "optional": true }
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
