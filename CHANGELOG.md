@@ -59,6 +59,6 @@ Initial release: irreversible regex scrubbing at `agent/pre-step`,
 table (`minimal`/`balanced`/`aggressive`), fail-loud config validation, and
 the standalone `dsh-secret-scrub/rules` engine export.
 
-[0.1.2]: https://github.com/jkt-check/dsh-secret-scrub/compare/v0.1.0...V0.1.2
+[0.1.2]: https://github.com/jkt-check/dsh-secret-scrub/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jkt-check/dsh-secret-scrub/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jkt-check/dsh-secret-scrub/releases/tag/v0.1.0
