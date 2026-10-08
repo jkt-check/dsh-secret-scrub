@@ -212,6 +212,19 @@ describe('tier 0: api-key (generic)', () => {
       expect(scrubText(prose, BUILTIN_RULES).text).toBe(prose)
     }
   })
+
+  it('redacts an api_key JWT assignment whole, not just the header segment', () => {
+    // Regression: the value class must include `.` — without it the match
+    // stops at the header segment and generic-bearer can no longer see the
+    // JWT intact, leaking payload + signature.
+    expect(scrubText(`api_key=${JWT}`, BUILTIN_RULES).text).toBe('[REDACTED:api-key]')
+  })
+
+  it('leaves the closing quote in place so redacted JSON stays valid', () => {
+    // The bare form keeps a stray trailing quote by design: consuming it
+    // would break the JSON form `{"api_key": "…"}` into `{"[REDACTED:…]}`.
+    expect(scrubText(`api_key='${API_KEY_VALUE}'`, BUILTIN_RULES).text).toBe("[REDACTED:api-key]'")
+  })
 })
 
 describe('tier 0: provider keys (kaya parity)', () => {
@@ -295,6 +308,8 @@ describe('tier 1: key-assignment', () => {
       'monkey=aaaaaaaaaaaa',           // keyword only as a substring, not a `_` segment
       'token = 5',                     // spaces around = : code, not an assignment
       'token=computeToken()',          // short pure-letter value: an identifier
+      'password=req.body.password',    // dotted identifier chain: a code traversal, not a secret
+      'token=response.data.token',     // dotted identifier chain: a code traversal, not a secret
       'api_key=short',                 // value below the 8-char floor
       'password_store_dir=/home/u/.password-store', // deny-listed safe name
     ]

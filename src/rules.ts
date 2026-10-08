@@ -104,6 +104,9 @@ function isSecretEnvAssignment(match: string): boolean {
  * - a deny-listed safe name survives (compared uppercase, so the lowercase
  *   form of `PASSWORD_STORE_DIR` is safe too);
  * - a PEM armor value (`PUBLIC_KEY=-----BEGIN …`) is not a secret;
+ * - a dotted identifier chain value (`password=req.body.password`,
+ *   `token=response.data.token`) is a code traversal, not a credential — an
+ *   `eyJ`-prefixed JWT value keeps its dots and stays a candidate;
  * - the value must mix at least two character classes with four or more
  *   distinct characters, and a pure-letter value must be at least 24 chars —
  *   shorter pure-letter values are usually identifiers (`token=computeToken()`),
@@ -116,6 +119,7 @@ function isSensitiveKeyAssignment(match: string): boolean {
   if (SAFE_ENV_NAMES.has(name.toUpperCase())) return false
   const value = match.slice(eq + 1).replace(/^["']|["']$/g, '')
   if (value.startsWith('---')) return false
+  if (!value.startsWith('eyJ') && /^\$?[A-Za-z_][\w$]*(?:\.\$?[A-Za-z_][\w$]*)+$/.test(value)) return false
   const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(pattern => pattern.test(value)).length
   if (classes < 2) return false
   if (new Set(value).size < 4) return false
@@ -223,9 +227,13 @@ export const BUILTIN_RULES: readonly SecretRule[] = [
     // "…"`), value of 8+ token characters. No leading `\b`: the span inside
     // a longer name (`deepseek_api_key=…`) is claimed here at tier 0. The
     // whole name+separator+value span is replaced; the filter only rejects
-    // obvious documentation placeholders. Runs before `generic-bearer` so
-    // `api_key=<jwt>` is categorized here, not as a bare JWT.
-    pattern: /[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]['"]?\s*[=:]\s*['"]?[A-Za-z0-9_+\-/]{8,}/g,
+    // obvious documentation placeholders. The value class includes `.` so a
+    // three-segment JWT (`api_key=eyJ…`) is consumed whole — splitting after
+    // the header would hide the intact JWT from generic-bearer and leak the
+    // payload + signature. The closing quote is deliberately NOT consumed:
+    // eating it would turn the JSON form into `{"[REDACTED:api-key]}`,
+    // invalid JSON — a stray quote in the bare form is the cheaper price.
+    pattern: /[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]['"]?\s*[=:]\s*['"]?[A-Za-z0-9_+\-/.]{8,}/g,
     validate: isRealApiKeyAssignment,
   },
   { category: 'aws-access-key', tier: 0, pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },

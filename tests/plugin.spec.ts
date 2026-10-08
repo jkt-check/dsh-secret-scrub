@@ -257,6 +257,32 @@ describe('inputLevel gating (agent/pre-step)', () => {
     if (decision.kind !== 'enter') throw new Error('expected enter')
     expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: `mail ${EMAIL}` }])
   })
+
+  it('inputLevel balanced scrubs tiers 0–1 on user messages but leaves PII', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, { inputLevel: 'balanced' })
+    const decision = await preStep(ctx, SAMPLE)
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: `key [REDACTED:aws-access-key]\n[REDACTED:env-var-secret]\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}` }])
+  })
+})
+
+describe('v0.1.2 complaint regressions', () => {
+  it('scrubs a pasted CN phone number at default config', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, {})
+    const decision = await preStep(ctx, '我的电话号码: 13810123133')
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: '我的电话号码: [REDACTED:phone-cn]' }])
+  })
+
+  it('scrubs a lowercase deepseek_api_key assignment at default config', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, {})
+    const decision = await preStep(ctx, 'deepseek_api_key=sk_x12490edsdfg242fsd23fxcf1234')
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: 'deepseek_[REDACTED:api-key]' }])
+  })
 })
 
 describe('disposal', () => {
