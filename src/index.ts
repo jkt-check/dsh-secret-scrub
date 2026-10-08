@@ -119,7 +119,6 @@ function resolveRules(config: Config): ResolvedRules {
     // Extra rules are always active — tier-0-equivalent, exempt from the level gate.
     extra.push({ category: entry.category, pattern, tier: 0 })
   }
-  // Extra rules are always active — tier-0-equivalent, exempt from the level gate.
   const active = (level: ScrubLevel): SecretRule[] => [
     ...BUILTIN_RULES.filter(rule => rule.tier <= maxTier(level) && !disabled.has(rule.category)),
     ...extra,
