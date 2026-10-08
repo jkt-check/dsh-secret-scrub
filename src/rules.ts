@@ -94,6 +94,36 @@ function isSecretEnvAssignment(match: string): boolean {
 }
 
 /**
+ * Whether one `key-assignment` match should be redacted. The pattern accepts
+ * any `name=value` shape (keeping the regex linear, like `env-var-secret`),
+ * so this filter owns every semantic check:
+ *
+ * - the name must carry a sensitive keyword as a whole `_`-delimited segment
+ *   (case-insensitive: `deepseek_api_key` and `MY_Token` are secrets,
+ *   `monkey`, `keyboard`, and `apikey` are not);
+ * - a deny-listed safe name survives (compared uppercase, so the lowercase
+ *   form of `PASSWORD_STORE_DIR` is safe too);
+ * - a PEM armor value (`PUBLIC_KEY=-----BEGIN …`) is not a secret;
+ * - the value must mix at least two character classes with four or more
+ *   distinct characters, and a pure-letter value must be at least 24 chars —
+ *   shorter pure-letter values are usually identifiers (`token=computeToken()`),
+ *   not credentials.
+ */
+function isSensitiveKeyAssignment(match: string): boolean {
+  const eq = match.indexOf('=')
+  const name = match.slice(0, eq)
+  if (!/(?:^|_)(?:key|secret|token|password)(?:_|$)/i.test(name)) return false
+  if (SAFE_ENV_NAMES.has(name.toUpperCase())) return false
+  const value = match.slice(eq + 1).replace(/^["']|["']$/g, '')
+  if (value.startsWith('---')) return false
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(pattern => pattern.test(value)).length
+  if (classes < 2) return false
+  if (new Set(value).size < 4) return false
+  if (/^[A-Za-z]+$/.test(value) && value.length < 24) return false
+  return true
+}
+
+/**
  * Substrings that mark a high-entropy candidate as a documentation
  * placeholder rather than a secret. `redacted` also covers fragments of
  * this scrubber's own `[REDACTED:<category>]` placeholders, keeping a
@@ -128,12 +158,36 @@ function isHighEntropyToken(match: string): boolean {
 }
 
 /**
+ * Value fragments that mark an `api-key` assignment as a documentation
+ * placeholder rather than a live credential (kaya parity: case-insensitive
+ * substring match). The `<`/`>`/`${`/`}` markers can never appear in the
+ * pattern's value class; they are kept for parity with the reference list.
+ */
+const FAKE_VALUE_MARKERS = [
+  'xxx', '***', 'your_', 'your-', 'your_key', 'your-api-key',
+  'test', 'example', 'placeholder', 'changeme', 'change_me',
+  'redacted', 'null', 'none', 'undefined', '<', '>', '${', '}',
+]
+
+/**
+ * Whether one `api-key` match should be redacted: the value — everything
+ * after the first `=` or `:`, quotes stripped — must not be an obvious
+ * documentation placeholder.
+ */
+function isRealApiKeyAssignment(match: string): boolean {
+  const value = match.slice(match.search(/[=:]/) + 1).trim().replace(/^["']+|["']+$/g, '')
+  const lower = value.toLowerCase()
+  return !FAKE_VALUE_MARKERS.some(marker => lower.includes(marker))
+}
+
+/**
  * Built-in rules, all global-flagged, ordered by tier ascending and, within
  * a tier, from most specific to most general. Tiers 0–1 are
  * prefix-anchored (provider key prefixes, assignment shapes, URL authority
  * forms); tier 2 matches shapes (PII and high-entropy runs). The ordering
  * lets broad multi-line and provider-prefixed rules claim their spans
- * before the generic fallbacks (`generic-bearer`, `high-entropy`) run.
+ * before the generic fallbacks (`generic-sk-key`, `generic-bearer`,
+ * `high-entropy`) run.
  * `private-key` spans lines and runs first so nothing else claims pieces of
  * a PEM body; `id-cn` runs before `credit-card` so a Luhn-valid 17–19 digit
  * run categorizes as the more specific PII id; `generic-bearer` and
@@ -147,6 +201,32 @@ export const BUILTIN_RULES: readonly SecretRule[] = [
     tier: 0,
     // eslint-disable-next-line @stylistic/max-len -- one atomic PEM armor literal; splitting it invites drift.
     pattern: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY(?: BLOCK)?-----/g,
+  },
+  {
+    category: 'private-key-truncated',
+    tier: 0,
+    // Truncation remnants, claimed immediately after complete blocks: an
+    // unclosed BEGIN redacts through the end of the text (tail truncation),
+    // an orphaned END redacts from the start of the text through the marker
+    // (head truncation). Both present yields placeholder + middle slice +
+    // placeholder. A lone BEGIN quoted in documentation over-redacts the
+    // rest of the text — accepted, privacy-first (kaya parity).
+    // eslint-disable-next-line @stylistic/max-len -- the two armor alternatives must stay atomic.
+    pattern: /^[\s\S]*?-----END (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY(?: BLOCK)?-----|-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*$/g,
+  },
+  {
+    category: 'api-key',
+    tier: 0,
+    // Generic `apikey` assignment (kaya parity): the fixed name `api` +
+    // optional `_`/`-` + `key` in any case, `=` or `:` separator with
+    // optional surrounding whitespace and quotes (JSON form `"api_key":
+    // "…"`), value of 8+ token characters. No leading `\b`: the span inside
+    // a longer name (`deepseek_api_key=…`) is claimed here at tier 0. The
+    // whole name+separator+value span is replaced; the filter only rejects
+    // obvious documentation placeholders. Runs before `generic-bearer` so
+    // `api_key=<jwt>` is categorized here, not as a bare JWT.
+    pattern: /[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]['"]?\s*[=:]\s*['"]?[A-Za-z0-9_+\-/]{8,}/g,
+    validate: isRealApiKeyAssignment,
   },
   { category: 'aws-access-key', tier: 0, pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
   {
@@ -166,12 +246,20 @@ export const BUILTIN_RULES: readonly SecretRule[] = [
   },
   { category: 'anthropic-key', tier: 0, pattern: /\bsk-ant-[A-Za-z0-9_-]{32,}\b/g },
   { category: 'gitlab-pat', tier: 0, pattern: /\bglpat-[A-Za-z0-9_-]{20,}\b/g },
+  // Rollbar's exact-32 shape runs before stripe-key's looser
+  // `[sr]k_(live|test)_…{16,}` so a real rollbar token keeps its own
+  // category; a 32-char stripe restricted key would be labeled rollbar —
+  // miscategorized but still redacted (kaya has the same collision).
+  { category: 'rollbar-token', tier: 0, pattern: /\brk_(?:live|test)_[A-Za-z0-9]{32}\b/g },
   { category: 'stripe-key', tier: 0, pattern: /\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}\b/g },
   {
     category: 'slack-token',
     tier: 0,
     pattern: /(?:\bxox[baprs]-[A-Za-z0-9-]{10,}\b|\bxapp-[A-Za-z0-9-]{10,}\b)/g,
   },
+  { category: 'slack-signing-secret', tier: 0, pattern: /\bwhsec_[A-Za-z0-9]{32,}\b/g },
+  // No scheme requirement: a scheme-less paste is still a live credential.
+  { category: 'slack-webhook-url', tier: 0, pattern: /hooks\.slack\.com\/(?:services|workflows)\/[A-Za-z0-9+/]{43,46}/g },
   { category: 'npm-token', tier: 0, pattern: /\bnpm_[A-Za-z0-9]{36}\b/g },
   // The fixed macaroon prefix `AgEIcHlwaS5vcmc` (base64 of the PyPI token
   // header) keeps the rule from matching prose mentions of `pypi-`.
@@ -182,6 +270,16 @@ export const BUILTIN_RULES: readonly SecretRule[] = [
   { category: 'shopify-token', tier: 0, pattern: /\bshpat_[0-9a-f]{32}\b/g },
   { category: 'telegram-bot-token', tier: 0, pattern: /\b\d{8,10}:[A-Za-z0-9_-]{35}\b/g },
   { category: 'tavily-key', tier: 0, pattern: /\btvly-[A-Za-z0-9_-]{20,}\b/g },
+  // Fixed prefix + exact 58-char bech32 charset is the guard; no `\b` (kaya parity).
+  { category: 'age-secret-key', tier: 0, pattern: /AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}/g },
+  { category: 'docker-pat', tier: 0, pattern: /\bdckr_pat_[A-Za-z0-9_-]{27}\b/g },
+  { category: 'notion-token', tier: 0, pattern: /\bntn_[0-9]{11}[A-Za-z0-9]{32}\b/g },
+  { category: 'supabase-token', tier: 0, pattern: /\bsbp_[a-f0-9]{40}\b/g },
+  { category: 'linear-api-key', tier: 0, pattern: /\blin_api_[A-Za-z0-9]{40}\b/g },
+  // Generic `sk-`/`sk_` fallback: runs after every provider-specific sk rule
+  // above, so only shapes none of them claim (notably the underscore form
+  // `sk_…`) land here.
+  { category: 'generic-sk-key', tier: 0, pattern: /\bsk[-_][A-Za-z0-9_-]{20,}\b/g },
   // Connection-URL authority: the whole `scheme://user:password@` span is
   // replaced, leaving the host readable after the placeholder. The userinfo
   // classes exclude `[` and `]` so a `[REDACTED:<category>]` placeholder
@@ -220,6 +318,20 @@ export const BUILTIN_RULES: readonly SecretRule[] = [
   },
   { category: 'azure-storage-key', tier: 1, pattern: /[Aa]ccount[Kk]ey=["']?[A-Za-z0-9+/=]{86,88}["']?/g },
   { category: 'alibaba-access-key', tier: 1, pattern: /\bLTAI[A-Za-z0-9]{16,}\b/g },
+  {
+    category: 'key-assignment',
+    tier: 1,
+    // Assignment-shaped secrets in ANY case: the lowercase and mixed-case
+    // shapes `env-var-secret` cannot see (`deepseek_api_key=…`, `MY_Token=…`).
+    // Like `env-var-secret`, the pattern accepts every `name=value` shape and
+    // the validate filter owns the semantics. `=` must follow the name
+    // immediately (no whitespace), so code like `token = 5` never matches;
+    // the value is a closed quoted span or a bare run of at least 8 token
+    // characters. Runs last in tier 1 so the uppercase-only rule keeps
+    // claiming its own shape.
+    pattern: /\b[A-Za-z0-9_]+=(?:"[^"\n]{8,}"|'[^'\n]{8,}'|[A-Za-z0-9_\-+/=.]{8,})/g,
+    validate: isSensitiveKeyAssignment,
+  },
   {
     // Bounded quantifiers keep mismatch on long `@`-less runs linear.
     category: 'email',

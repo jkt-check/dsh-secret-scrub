@@ -1,7 +1,7 @@
 {
   "name": "dsh-secret-scrub",
   "description": "Secret-scrubbing guard plugin: irreversible regex redaction of secrets before session-log persistence and model requests",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

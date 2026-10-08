@@ -66,6 +66,11 @@ describe('config validation fails loud', () => {
     const ctx = new Context()
     await expect(ctx.plugin(SecretScrub, { level: 'paranoid' } as unknown as Config)).rejects.toThrow(/expected|level/)
   })
+
+  it('rejects an unknown inputLevel string at schema validation', async () => {
+    const ctx = new Context()
+    await expect(ctx.plugin(SecretScrub, { inputLevel: 'paranoid' } as unknown as Config)).rejects.toThrow(/expected|inputLevel|level/)
+  })
 })
 
 describe('agent/pre-step arm', () => {
@@ -161,47 +166,96 @@ describe('tools/ptc-dispatch-log arm', () => {
   })
 })
 
-describe('level gating', () => {
+describe('level gating (tool output)', () => {
   const SAMPLE = `key ${AWS_KEY}\n${ENV_LINE}\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}`
 
   it('minimal scrubs tier 0 only', async () => {
     const ctx = new Context()
     await ctx.plugin(SecretScrub, { level: 'minimal' })
-    const decision = await preStep(ctx, SAMPLE)
-    if (decision.kind !== 'enter') throw new Error('expected enter')
-    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: `key [REDACTED:aws-access-key]\n${ENV_LINE}\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}` }])
+    const decision = await postExecute(ctx, [{ type: 'text', text: SAMPLE }])
+    expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: `key [REDACTED:aws-access-key]\n${ENV_LINE}\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}` }] })
   })
 
   it('omitted level defaults to balanced: tier 1 included, tier 2 excluded', async () => {
     const ctx = new Context()
     await ctx.plugin(SecretScrub, {})
-    const decision = await preStep(ctx, SAMPLE)
-    if (decision.kind !== 'enter') throw new Error('expected enter')
-    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: `key [REDACTED:aws-access-key]\n[REDACTED:env-var-secret]\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}` }])
+    const decision = await postExecute(ctx, [{ type: 'text', text: SAMPLE }])
+    expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: `key [REDACTED:aws-access-key]\n[REDACTED:env-var-secret]\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}` }] })
   })
 
   it('aggressive scrubs every tier', async () => {
     const ctx = new Context()
     await ctx.plugin(SecretScrub, { level: 'aggressive' })
-    const decision = await preStep(ctx, SAMPLE)
-    if (decision.kind !== 'enter') throw new Error('expected enter')
-    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: 'key [REDACTED:aws-access-key]\n[REDACTED:env-var-secret]\nmail [REDACTED:email]\ntok [REDACTED:high-entropy]' }])
+    const decision = await postExecute(ctx, [{ type: 'text', text: SAMPLE }])
+    expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: 'key [REDACTED:aws-access-key]\n[REDACTED:env-var-secret]\nmail [REDACTED:email]\ntok [REDACTED:high-entropy]' }] })
   })
 
   it('keeps extra rules active at minimal level', async () => {
     const ctx = new Context()
     await ctx.plugin(SecretScrub, { level: 'minimal', extra: [{ category: 'internal-token', pattern: 'internal-[0-9]{4}' }] })
-    const decision = await preStep(ctx, 'use internal-1234')
-    if (decision.kind !== 'enter') throw new Error('expected enter')
-    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: 'use [REDACTED:internal-token]' }])
+    const decision = await postExecute(ctx, [{ type: 'text', text: 'use internal-1234' }])
+    expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: 'use [REDACTED:internal-token]' }] })
   })
 
   it('a disabled tier-1 builtin stops scrubbing that category only', async () => {
     const ctx = new Context()
     await ctx.plugin(SecretScrub, { disabled: ['env-var-secret'] })
-    const decision = await preStep(ctx, `key ${AWS_KEY}\n${ENV_LINE}`)
+    // A sub-8-char value is below key-assignment's floor, so only
+    // env-var-secret could claim this line; disabled, it survives.
+    const decision = await postExecute(ctx, [{ type: 'text', text: `key ${AWS_KEY}\nMY_API_KEY=x` }])
+    expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: `key [REDACTED:aws-access-key]\nMY_API_KEY=x` }] })
+  })
+
+  it('a disabled env-var-secret leaves long-value assignments to key-assignment', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, { disabled: ['env-var-secret'] })
+    const decision = await postExecute(ctx, [{ type: 'text', text: ENV_LINE }])
+    expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: 'export [REDACTED:key-assignment]' }] })
+  })
+})
+
+describe('inputLevel gating (agent/pre-step)', () => {
+  const SAMPLE = `key ${AWS_KEY}\n${ENV_LINE}\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}`
+  const FULLY_SCRUBBED = 'key [REDACTED:aws-access-key]\n[REDACTED:env-var-secret]\nmail [REDACTED:email]\ntok [REDACTED:high-entropy]'
+
+  it('defaults to aggressive for user messages even at balanced output', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, {})
+    const decision = await preStep(ctx, SAMPLE)
     if (decision.kind !== 'enter') throw new Error('expected enter')
-    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: `key [REDACTED:aws-access-key]\n${ENV_LINE}` }])
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: FULLY_SCRUBBED }])
+  })
+
+  it('stays aggressive on user messages when level is minimal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, { level: 'minimal' })
+    const decision = await preStep(ctx, SAMPLE)
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: FULLY_SCRUBBED }])
+  })
+
+  it('inputLevel minimal scrubs tier 0 only on user messages', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, { inputLevel: 'minimal' })
+    const decision = await preStep(ctx, SAMPLE)
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: `key [REDACTED:aws-access-key]\n${ENV_LINE}\nmail ${EMAIL}\ntok ${ENTROPY_TOKEN}` }])
+  })
+
+  it('keeps extra rules active on user messages at inputLevel minimal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, { inputLevel: 'minimal', extra: [{ category: 'internal-token', pattern: 'internal-[0-9]{4}' }] })
+    const decision = await preStep(ctx, 'use internal-1234')
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: 'use [REDACTED:internal-token]' }])
+  })
+
+  it('a disabled tier-2 builtin stops scrubbing that category on user messages', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, { disabled: ['email'] })
+    const decision = await preStep(ctx, `mail ${EMAIL}`)
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages[0]!.content).toEqual([{ type: 'text', text: `mail ${EMAIL}` }])
   })
 })
 

@@ -23,7 +23,7 @@ npm i -g @deepseek-ai/dsh
 # 2. Install this plugin into the target profile (headless shown as an example)
 dsh plugin --profile headless add dsh-secret-scrub
 #    To test local changes before publishing, use the tarball from `npm pack`:
-#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.1.tgz
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.2.tgz
 
 # 3. Restart the profile, then run a task that contains secrets — they will be redacted before reaching the model/session log
 dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE"
@@ -60,13 +60,14 @@ await ctx.plugin(SecretScrub, {
 
 The plugin mounts three prepended waterfall listeners that delegate first and then scrub whatever the rest of the chain admitted:
 
-- `agent/pre-step` rewrites each step's admitted user messages before they reach the session log and the model request.
+- `agent/pre-step` rewrites each step's admitted user messages before they reach the session log and the model request. User messages are scrubbed at `inputLevel` — `aggressive` by default, regardless of `level` — so pasted PII and credentials are redacted with the full rule table even when tool output stays quieter.
 - `tools/post-execute` rewrites an accepted tool result's plain content.
 - `tools/ptc-dispatch-log` rewrites the durable `tool/code-dispatch` copy of a `run_code` sub-dispatch.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `level` | `balanced` | Scrub depth: `minimal` runs tier 0 only, `balanced` adds tier 1, `aggressive` adds tier 2 — PII and the high-entropy fallback |
+| `level` | `balanced` | Scrub depth for tool output: `minimal` runs tier 0 only, `balanced` adds tier 1, `aggressive` adds tier 2 — PII and the high-entropy fallback |
+| `inputLevel` | `aggressive` | Scrub depth for admitted user messages at `agent/pre-step`, independent of `level` |
 | `disabled` | `[]` | Built-in tier 1/2 categories to turn off; a tier-0 core rule cannot be disabled and fails the load |
 | `extra` | `[]` | Deployment-added rules, active at every level: a unique lowercase-dashed `category` plus a `pattern` compiled with `new RegExp(pattern, 'g')` |
 
@@ -78,8 +79,8 @@ Invalid configuration fails at startup with a clear error — an unknown or tier
 
 | Tier | Active at | Categories |
 |---|---|---|
-| 0 — core secrets | every level; cannot be disabled | `private-key`, `aws-access-key`, `github-token`, `google-api-key`, `deepseek-key`, `openai-key`, `anthropic-key`, `gitlab-pat`, `stripe-key`, `slack-token`, `npm-token`, `pypi-token`, `sendgrid-key`, `twilio-key`, `digitalocean-token`, `shopify-token`, `telegram-bot-token`, `tavily-key`, `url-credentials` (connection-URL authority), `url-access-token` (OAuth callback token), `generic-bearer` (bearer tokens and JWTs) |
-| 1 — assignment and cloud-provider keys | `balanced` and up | `env-var-secret` (uppercase assignments whose name carries KEY/SECRET/TOKEN/PASSWORD as a whole `_`-delimited segment), `azure-storage-key`, `alibaba-access-key` |
+| 0 — core secrets | every level; cannot be disabled | `private-key`, `private-key-truncated` (unclosed/orphaned PEM armor), `api-key` (generic `apikey` assignments), `aws-access-key`, `github-token`, `google-api-key`, `deepseek-key`, `openai-key`, `anthropic-key`, `gitlab-pat`, `rollbar-token`, `stripe-key`, `slack-token`, `slack-signing-secret`, `slack-webhook-url`, `npm-token`, `pypi-token`, `sendgrid-key`, `twilio-key`, `digitalocean-token`, `shopify-token`, `telegram-bot-token`, `tavily-key`, `age-secret-key`, `docker-pat`, `notion-token`, `supabase-token`, `linear-api-key`, `generic-sk-key` (`sk-`/`sk_` fallback), `url-credentials` (connection-URL authority), `url-access-token` (OAuth callback token), `generic-bearer` (bearer tokens and JWTs) |
+| 1 — assignment and cloud-provider keys | `balanced` and up | `env-var-secret` (uppercase assignments whose name carries KEY/SECRET/TOKEN/PASSWORD as a whole `_`-delimited segment), `azure-storage-key`, `alibaba-access-key`, `key-assignment` (the same assignment shape in any letter case, value-filtered) |
 | 2 — PII and the high-entropy fallback | `aggressive` only | `email`, `phone-cn`, `phone-intl`, `id-cn`, `credit-card` (Luhn-checked), `ssn-us`, `high-entropy` |
 
 ## Use the engine directly
