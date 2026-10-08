@@ -4,7 +4,10 @@
  * `agent/pre-step` for admitted user messages (whose `user/message` events
  * are logged only after the decision), `tools/post-execute` for accepted
  * tool results, and `tools/ptc-dispatch-log` for the durable copy of a
- * `run_code` sub-dispatch. Redaction is one-way: the placeholder
+ * `run_code` sub-dispatch. User messages are scrubbed at `inputLevel`
+ * (default `aggressive`, the full rule table) regardless of `level`, because
+ * pasted PII and credentials must never reach the log or the model; tool
+ * output follows `level`. Redaction is one-way: the placeholder
  * `[REDACTED:<category>]` is all the log and the model ever see at those
  * points. The known gaps (the `agent/inbox/spliced` receipt copy, tool-call
  * arguments, assistant text) are documented in the package README.
@@ -33,11 +36,18 @@ export const name = 'secret-scrub'
  */
 export interface Config {
   /**
-   * Scrub depth: `minimal` runs tier 0 only, `balanced` (the default) adds
-   * tier 1, `aggressive` adds tier 2 — PII and the high-entropy fallback.
-   * `extra` rules always run, after all built-ins.
+   * Scrub depth for tool output: `minimal` runs tier 0 only, `balanced`
+   * (the default) adds tier 1, `aggressive` adds tier 2 — PII and the
+   * high-entropy fallback. `extra` rules always run, after all built-ins.
    */
   level?: ScrubLevel
+  /**
+   * Scrub depth for admitted user messages at `agent/pre-step`, independent
+   * of `level`. Defaults to `aggressive`: pasted PII and credentials are
+   * scrubbed with the full rule table even when tool output stays at a
+   * quieter level.
+   */
+  inputLevel?: ScrubLevel
   /**
    * Built-in rule categories to turn off; every entry must name a built-in
    * rule and tier-0 (core secret) categories cannot be disabled.
@@ -57,6 +67,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   level: z.union(['minimal', 'balanced', 'aggressive']).default('balanced'),
+  inputLevel: z.union(['minimal', 'balanced', 'aggressive']).default('aggressive'),
   disabled: z.array(z.string()).default([]),
   extra: z.array(z.object({ category: z.string(), pattern: z.string() })).default([]),
 })
@@ -65,10 +76,19 @@ export const Config: z<Config> = z.object({
 const CATEGORY_ID = /^[a-z0-9][a-z0-9-]*$/
 
 /**
- * Resolve the active rule set from validated config, failing loud on every
+ * The two active rule sets: `input` (user messages at `agent/pre-step`,
+ * gated by `inputLevel`) and `output` (tool results, gated by `level`).
+ */
+interface ResolvedRules {
+  input: SecretRule[]
+  output: SecretRule[]
+}
+
+/**
+ * Resolve the active rule sets from validated config, failing loud on every
  * unknown or unusable entry.
  */
-function resolveRules(config: Config): SecretRule[] {
+function resolveRules(config: Config): ResolvedRules {
   // schemastery's .default() guarantees the fields are set after validation.
   const disabled = new Set(config.disabled as string[])
   const known = new Map(BUILTIN_RULES.map(rule => [rule.category, rule]))
@@ -99,8 +119,15 @@ function resolveRules(config: Config): SecretRule[] {
     // Extra rules are always active — tier-0-equivalent, exempt from the level gate.
     extra.push({ category: entry.category, pattern, tier: 0 })
   }
-  const active = BUILTIN_RULES.filter(rule => rule.tier <= maxTier(config.level as ScrubLevel) && !disabled.has(rule.category))
-  return [...active, ...extra]
+  // Extra rules are always active — tier-0-equivalent, exempt from the level gate.
+  const active = (level: ScrubLevel): SecretRule[] => [
+    ...BUILTIN_RULES.filter(rule => rule.tier <= maxTier(level) && !disabled.has(rule.category)),
+    ...extra,
+  ]
+  return {
+    input: active(config.inputLevel as ScrubLevel),
+    output: active(config.level as ScrubLevel),
+  }
 }
 
 /** Per-category counts of one scrubbed content list (empty when untouched). */
@@ -167,7 +194,7 @@ export function apply(ctx: Context, config: Config): void {
     let changed = false
     const messages: UserMessage[] = []
     for (const message of decision.messages) {
-      const scrubbed = scrubBlocks(message.content, rules)
+      const scrubbed = scrubBlocks(message.content, rules.input)
       if (scrubbed.blocks === message.content) {
         messages.push(message)
         continue
@@ -192,7 +219,7 @@ export function apply(ctx: Context, config: Config): void {
     const decision = await next()
     if (decision.kind !== 'accept' || decision.value !== undefined) return decision
     const content = decision.content ?? result.content
-    const scrubbed = scrubBlocks(content, rules)
+    const scrubbed = scrubBlocks(content, rules.output)
     if (scrubbed.blocks === content) return decision
     logRedactions(`tools/post-execute ${exec.name}`, scrubbed.redactions)
     return { ...decision, content: scrubbed.blocks }
@@ -202,7 +229,7 @@ export function apply(ctx: Context, config: Config): void {
   // only the tool/code-dispatch event's copy is scrubbed.
   ctx.on('tools/ptc-dispatch-log', async (dispatch, next): Promise<ContentBlock[]> => {
     const content = await next()
-    const scrubbed = scrubBlocks(content, rules)
+    const scrubbed = scrubBlocks(content, rules.output)
     if (scrubbed.blocks === content) return content
     logRedactions(`tools/ptc-dispatch-log ${dispatch.name}`, scrubbed.redactions)
     return scrubbed.blocks

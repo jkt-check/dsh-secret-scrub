@@ -23,7 +23,7 @@ npm i -g @deepseek-ai/dsh
 # 2. 把插件装到目标 profile 里（以 headless 为例）
 dsh plugin --profile headless add dsh-secret-scrub
 #    发布前想测试本地改动，可用 npm pack 生成的 tarball：
-#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.1.tgz
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.2.tgz
 
 # 3. 重启该 profile 后，运行包含敏感信息的任务——密钥会在进入模型/会话日志前被脱敏
 dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE"
@@ -60,13 +60,14 @@ await ctx.plugin(SecretScrub, {
 
 插件挂载三个前置的 waterfall 监听器，先委托下游，再对链路最终采纳的内容脱敏：
 
-- `agent/pre-step` 改写每个 step 采纳的用户消息，然后才进入会话日志和模型请求。
+- `agent/pre-step` 改写每个 step 采纳的用户消息，然后才进入会话日志和模型请求。用户消息按 `inputLevel` 脱敏——默认 `aggressive`，与 `level` 无关——即使工具输出保持较低级别，粘贴进来的 PII 和密钥也会按全量规则表处理。
 - `tools/post-execute` 改写被接受的工具结果的纯文本内容。
 - `tools/ptc-dispatch-log` 改写 `run_code` 子调用的 `tool/code-dispatch` 持久化副本。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `level` | `balanced` | 脱敏深度：`minimal` 只跑 tier 0,`balanced` 加 tier 1,`aggressive` 加 tier 2——PII 与高熵兜底 |
+| `level` | `balanced` | 工具输出的脱敏深度：`minimal` 只跑 tier 0,`balanced` 加 tier 1,`aggressive` 加 tier 2——PII 与高熵兜底 |
+| `inputLevel` | `aggressive` | `agent/pre-step` 采纳的用户消息的脱敏深度，独立于 `level` |
 | `disabled` | `[]` | 关闭指定的 tier 1/2 内置类目；tier-0 核心规则不可禁用，禁用会在加载时报错 |
 | `extra` | `[]` | 部署方追加的规则，在所有级别下生效：全局唯一的小写连字符 `category` 加上以 `new RegExp(pattern, 'g')` 编译的 `pattern` |
 
@@ -78,8 +79,8 @@ await ctx.plugin(SecretScrub, {
 
 | Tier | 生效级别 | 类目 |
 |---|---|---|
-| 0 — 核心密钥 | 所有级别；不可禁用 | `private-key`、`aws-access-key`、`github-token`、`google-api-key`、`deepseek-key`、`openai-key`、`anthropic-key`、`gitlab-pat`、`stripe-key`、`slack-token`、`npm-token`、`pypi-token`、`sendgrid-key`、`twilio-key`、`digitalocean-token`、`shopify-token`、`telegram-bot-token`、`tavily-key`、`url-credentials`（连接串 authority)、`url-access-token`(OAuth 回调令牌)、`generic-bearer`(Bearer 令牌与 JWT) |
-| 1 — 赋值与云厂商密钥 | `balanced` 及以上 | `env-var-secret`（名称以 `_` 分段整体包含 KEY/SECRET/TOKEN/PASSWORD 的大写赋值）、`azure-storage-key`、`alibaba-access-key` |
+| 0 — 核心密钥 | 所有级别；不可禁用 | `private-key`、`private-key-truncated`（截断 PEM 护甲）、`api-key`（通用 apikey 赋值）、`aws-access-key`、`github-token`、`google-api-key`、`deepseek-key`、`openai-key`、`anthropic-key`、`gitlab-pat`、`rollbar-token`、`stripe-key`、`slack-token`、`slack-signing-secret`、`slack-webhook-url`、`npm-token`、`pypi-token`、`sendgrid-key`、`twilio-key`、`digitalocean-token`、`shopify-token`、`telegram-bot-token`、`tavily-key`、`age-secret-key`、`docker-pat`、`notion-token`、`supabase-token`、`linear-api-key`、`generic-sk-key`(`sk-`/`sk_` 兜底)、`url-credentials`（连接串 authority)、`url-access-token`(OAuth 回调令牌)、`generic-bearer`(Bearer 令牌与 JWT) |
+| 1 — 赋值与云厂商密钥 | `balanced` 及以上 | `env-var-secret`（名称以 `_` 分段整体包含 KEY/SECRET/TOKEN/PASSWORD 的大写赋值）、`azure-storage-key`、`alibaba-access-key`、`key-assignment`（任意大小写的同类赋值形状，带取值过滤） |
 | 2 — PII 与高熵兜底 | 仅 `aggressive` | `email`、`phone-cn`、`phone-intl`、`id-cn`、`credit-card`(Luhn 校验)、`ssn-us`、`high-entropy` |
 
 ## 直接使用引擎

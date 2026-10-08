@@ -29,6 +29,17 @@ const DIGITALOCEAN_TOKEN = 'dop_v1_' + '0123456789abcdef'.repeat(4)
 const SHOPIFY_TOKEN = 'shpat_' + '0123456789abcdef'.repeat(2)
 const TELEGRAM_TOKEN = '123456789:' + 'aB1cD'.repeat(7)
 const TAVILY_KEY = 'tvly-' + 'aB1c'.repeat(5)
+// Split so secret scanners do not flag the documentation example key.
+const SK_UNDERSCORE_KEY = 'sk_' + 'x12490edsdfg242fsd23fxcf1234'
+const API_KEY_VALUE = 'q8K2mQ7xR4vB8nL1pT6wZ3y'
+const ROLLBAR_TOKEN = 'rk_live_' + 'aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW'
+const SLACK_SIGNING_SECRET = 'whsec_' + 'aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW'
+const AGE_SECRET_KEY = 'AGE-SECRET-KEY-1' + 'QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L' + 'QPZRY9X8GF2TVDW0S3JN54KHCE'
+const DOCKER_PAT = 'dckr_pat_' + 'aB3dE5fG7hI9jK1lM3nO5pQ7rS9'
+const NOTION_TOKEN = 'ntn_' + '12345678901' + 'aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW'
+const SUPABASE_TOKEN = 'sbp_' + '0123456789abcdef0123456789abcdef01234567'
+const LINEAR_KEY = 'lin_api_' + 'aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zB7c'
+const SLACK_WEBHOOK = 'hooks.slack.com/services/' + 'aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zB7cD0eF'
 const AWS_SECRET = 'wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY'
 const AZURE_ACCOUNT_KEY = 'aB3d'.repeat(22)
 const ALIBABA_KEY = 'LTAI4FvMrFDy5iHzKbEKeTXw'
@@ -153,6 +164,154 @@ describe('tier 0: provider keys', () => {
   it('rejects a 19-char glpat payload (one below the real length)', () => {
     const short = 'glpat-' + 'aB1cD2eF3gH4iJ5kL6m'
     expect(scrubText(short, BUILTIN_RULES).text).toBe(short)
+  })
+})
+
+describe('tier 0: generic-sk-key', () => {
+  it('redacts an sk_ underscore-form key the provider rules miss', () => {
+    const { text, redactions } = scrubText(`key ${SK_UNDERSCORE_KEY}`, BUILTIN_RULES)
+    expect(text).toBe('key [REDACTED:generic-sk-key]')
+    expect(redactions).toEqual({ 'generic-sk-key': 1 })
+  })
+
+  it('rejects short sk- runs', () => {
+    for (const prose of ['sk-0123456789abcdef', 'sk_short', 'sk-Ab1']) {
+      expect(scrubText(prose, BUILTIN_RULES).text).toBe(prose)
+    }
+  })
+
+  it('leaves provider-prefixed sk- keys to their specific categories', () => {
+    expect(scrubText(DEEPSEEK_KEY, BUILTIN_RULES).text).toBe('[REDACTED:deepseek-key]')
+    expect(scrubText(STRIPE_LIVE_KEY, BUILTIN_RULES).text).toBe('[REDACTED:stripe-key]')
+  })
+})
+
+describe('tier 0: api-key (generic)', () => {
+  it('redacts api_key assignments case-insensitively, claiming the span inside a longer name', () => {
+    // Like kaya, the pattern carries no leading \b: the `api_key=…` span
+    // inside `deepseek_api_key=…` is claimed at tier 0, before key-assignment
+    // (tier 1) can consume the whole assignment.
+    const { text, redactions } = scrubText(`deepseek_api_key=${SK_UNDERSCORE_KEY}`, BUILTIN_RULES)
+    expect(text).toBe('deepseek_[REDACTED:api-key]')
+    expect(redactions).toEqual({ 'api-key': 1 })
+  })
+
+  it('redacts the JSON, colon, and separator-less apikey forms', () => {
+    expect(scrubText(`{"api_key": "${API_KEY_VALUE}"}`, BUILTIN_RULES).text).toBe('{"[REDACTED:api-key]"}')
+    expect(scrubText(`apikey: ${API_KEY_VALUE}`, BUILTIN_RULES).text).toBe('[REDACTED:api-key]')
+    expect(scrubText(`Api-Key=${API_KEY_VALUE}`, BUILTIN_RULES).text).toBe('[REDACTED:api-key]')
+  })
+
+  it('skips obvious documentation placeholders and sub-8-char values', () => {
+    const negatives = [
+      'api_key=xxxxxxxx',      // fake-marker value
+      'api_key=testtesttest',  // fake-marker value
+      'api_key=sh0rt',         // below the 8-char floor
+    ]
+    for (const prose of negatives) {
+      expect(scrubText(prose, BUILTIN_RULES).text).toBe(prose)
+    }
+  })
+})
+
+describe('tier 0: provider keys (kaya parity)', () => {
+  const cases: { category: string; positive: string; negative: string }[] = [
+    { category: 'rollbar-token', positive: ROLLBAR_TOKEN, negative: 'rk_live_short' },
+    { category: 'slack-signing-secret', positive: SLACK_SIGNING_SECRET, negative: 'whsec_short' },
+    { category: 'age-secret-key', positive: AGE_SECRET_KEY, negative: 'AGE-SECRET-KEY-1SHORT' },
+    { category: 'docker-pat', positive: DOCKER_PAT, negative: 'dckr_pat_short' },
+    { category: 'notion-token', positive: NOTION_TOKEN, negative: 'ntn_short' },
+    { category: 'supabase-token', positive: SUPABASE_TOKEN, negative: 'sbp_0123456789ABCDEF' },
+    { category: 'linear-api-key', positive: LINEAR_KEY, negative: 'lin_api_short' },
+    { category: 'slack-webhook-url', positive: SLACK_WEBHOOK, negative: 'hooks.slack.com/services/short' },
+  ]
+  for (const { category, positive, negative } of cases) {
+    it(`redacts ${category} and rejects its near-miss`, () => {
+      const { text, redactions } = scrubText(`use ${positive} now`, BUILTIN_RULES)
+      expect(text).toBe(`use [REDACTED:${category}] now`)
+      expect(redactions).toEqual({ [category]: 1 })
+      expect(scrubText(negative, BUILTIN_RULES).text).toBe(negative)
+    })
+  }
+
+  it('labels a 32-char rk_live token as rollbar-token, not stripe-key', () => {
+    // rollbar-token (exact-32 shape) runs before stripe-key's looser
+    // `[sr]k_(live|test)_` shape, so the exact-length rollbar form wins.
+    const { text, redactions } = scrubText(ROLLBAR_TOKEN, BUILTIN_RULES)
+    expect(text).toBe('[REDACTED:rollbar-token]')
+    expect(redactions).toEqual({ 'rollbar-token': 1 })
+  })
+})
+
+describe('tier 0: private-key-truncated', () => {
+  it('redacts an unclosed BEGIN through the end of the text', () => {
+    const { text, redactions } = scrubText('prose\n-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhki', BUILTIN_RULES)
+    expect(text).toBe('prose\n[REDACTED:private-key-truncated]')
+    expect(redactions).toEqual({ 'private-key-truncated': 1 })
+  })
+
+  it('redacts from the start of the text through an orphaned END marker', () => {
+    const { text, redactions } = scrubText('MIIEvwIBADANBgkqhki\n-----END PRIVATE KEY-----\nafter', BUILTIN_RULES)
+    expect(text).toBe('[REDACTED:private-key-truncated]\nafter')
+    expect(redactions).toEqual({ 'private-key-truncated': 1 })
+  })
+
+  it('keeps the middle slice between an orphaned END and an unclosed BEGIN', () => {
+    const source = '-----END PRIVATE KEY-----\nmiddle\n-----BEGIN PRIVATE KEY-----'
+    const { text, redactions } = scrubText(source, BUILTIN_RULES)
+    expect(text).toBe('[REDACTED:private-key-truncated]\nmiddle\n[REDACTED:private-key-truncated]')
+    expect(redactions).toEqual({ 'private-key-truncated': 2 })
+  })
+
+  it('does not fire on a complete PEM block — private-key claims it first', () => {
+    const { text, redactions } = scrubText(PEM, BUILTIN_RULES)
+    expect(text).toBe('[REDACTED:private-key]')
+    expect(redactions).toEqual({ 'private-key': 1 })
+  })
+})
+
+describe('tier 1: key-assignment', () => {
+  it('redacts a lowercase keyword assignment env-var-secret misses', () => {
+    // api_token (not api_key) so the tier-0 api-key rule cannot claim it first.
+    const { text, redactions } = scrubText('deepseek_api_token=q8K2mQ7xR4vB8nL1pT6wZ3yH5cJ0', BUILTIN_RULES)
+    expect(text).toBe('[REDACTED:key-assignment]')
+    expect(redactions).toEqual({ 'key-assignment': 1 })
+  })
+
+  it('redacts mixed-case names that env-var-secret skips', () => {
+    expect(scrubText('MY_Token=q8K2mQ7xR4vB8nL1pT6wZ3y', BUILTIN_RULES).text).toBe('[REDACTED:key-assignment]')
+  })
+
+  it('redacts a quoted value whole, including the quotes', () => {
+    expect(scrubText('db_password="S3cure P@ssphrase 123"', BUILTIN_RULES).text).toBe('[REDACTED:key-assignment]')
+  })
+
+  it('redacts a long pure-letter credential value', () => {
+    expect(scrubText(`aws_secret_access_key=${AWS_SECRET}`, BUILTIN_RULES).text).toBe('[REDACTED:key-assignment]')
+  })
+
+  it('rejects keywordless names, code shapes, and short values', () => {
+    const negatives = [
+      'monkey=aaaaaaaaaaaa',           // keyword only as a substring, not a `_` segment
+      'token = 5',                     // spaces around = : code, not an assignment
+      'token=computeToken()',          // short pure-letter value: an identifier
+      'api_key=short',                 // value below the 8-char floor
+      'password_store_dir=/home/u/.password-store', // deny-listed safe name
+    ]
+    for (const prose of negatives) {
+      expect(scrubText(prose, BUILTIN_RULES).text).toBe(prose)
+    }
+  })
+
+  it('leaves a PEM-armored public key assignment alone', () => {
+    const prose = 'public_key=-----BEGIN PUBLIC KEY-----'
+    expect(scrubText(prose, BUILTIN_RULES).text).toBe(prose)
+  })
+
+  it('leaves uppercase keyword assignments to env-var-secret', () => {
+    // MY_SECRET_KEY carries no `apikey` segment, so the tier-0 api-key rule
+    // cannot claim it and the uppercase-only tier-1 rule keeps its shape.
+    expect(scrubText('MY_SECRET_KEY=q8K2mQ7xR4vB8nL1pT6wZ3y', BUILTIN_RULES).text).toBe('[REDACTED:env-var-secret]')
   })
 })
 
@@ -451,11 +610,22 @@ describe('scrubText', () => {
       `shop ${SHOPIFY_TOKEN}`,
       `tg ${TELEGRAM_TOKEN}`,
       `tvly ${TAVILY_KEY}`,
+      `bare ${SK_UNDERSCORE_KEY}`,
+      `rb ${ROLLBAR_TOKEN}`,
+      `whsec ${SLACK_SIGNING_SECRET}`,
+      `age ${AGE_SECRET_KEY}`,
+      `dkr ${DOCKER_PAT}`,
+      `ntn ${NOTION_TOKEN}`,
+      `sbp ${SUPABASE_TOKEN}`,
+      `lin ${LINEAR_KEY}`,
+      `hook ${SLACK_WEBHOOK}`,
       'url postgres://admin:s3cret@db.internal/app',
       'cb https://app.com/cb?access_token=a1b2c3d4e5f6g7h8&state=xyz',
       `export AWS_SECRET_ACCESS_KEY=${AWS_SECRET}`,
       `azure AccountKey=${AZURE_ACCOUNT_KEY}`,
       `ali ${ALIBABA_KEY}`,
+      `lc aws_secret_access_key=${AWS_SECRET}`,
+      `cfg api_key=${API_KEY_VALUE}`,
       'mail ada.lovelace@example.com',
       'phone 13800138000',
       'intl +442071234567',
@@ -463,6 +633,8 @@ describe('scrubText', () => {
       'card 4111 1111 1111 1111',
       'ssn 078-05-1120',
       `entropy ${ENTROPY_TOKEN}`,
+      // Must stay last: an unclosed BEGIN redacts through the end of the text.
+      'trunc\n-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhki',
     ].join('\n')
     const once = scrubText(source, BUILTIN_RULES)
     expect(once.text).not.toBe(source)
