@@ -105,7 +105,10 @@ function isSecretEnvAssignment(match: string): boolean {
  *   form of `PASSWORD_STORE_DIR` is safe too);
  * - a PEM armor value (`PUBLIC_KEY=-----BEGIN …`) is not a secret;
  * - a dotted identifier chain value (`password=req.body.password`,
- *   `token=response.data.token`) is a code traversal, not a credential — an
+ *   `token=response.data.token`) is a code traversal, not a credential. The
+ *   rejection only applies when EVERY `.`-separated segment is at most 20
+ *   chars (identifier length): a longer tail is a random token, not a
+ *   property path (`doppler_token=dp.pt.…` stays a secret). An
  *   `eyJ`-prefixed JWT value keeps its dots and stays a candidate;
  * - the value must mix at least two character classes with four or more
  *   distinct characters, and a pure-letter value must be at least 24 chars —
@@ -119,7 +122,8 @@ function isSensitiveKeyAssignment(match: string): boolean {
   if (SAFE_ENV_NAMES.has(name.toUpperCase())) return false
   const value = match.slice(eq + 1).replace(/^["']|["']$/g, '')
   if (value.startsWith('---')) return false
-  if (!value.startsWith('eyJ') && /^\$?[A-Za-z_][\w$]*(?:\.\$?[A-Za-z_][\w$]*)+$/.test(value)) return false
+  if (!value.startsWith('eyJ') && /^\$?[A-Za-z_][\w$]*(?:\.\$?[A-Za-z_][\w$]*)+$/.test(value)
+    && value.split('.').every(segment => segment.length <= 20)) return false
   const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(pattern => pattern.test(value)).length
   if (classes < 2) return false
   if (new Set(value).size < 4) return false

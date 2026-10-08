@@ -303,13 +303,21 @@ describe('tier 1: key-assignment', () => {
     expect(scrubText(`aws_secret_access_key=${AWS_SECRET}`, BUILTIN_RULES).text).toBe('[REDACTED:key-assignment]')
   })
 
+  it('redacts a dotted credential whose random tail exceeds identifier length', () => {
+    // Real token families carry dotted prefixes (Doppler `dp.pt.…`): the
+    // chain rejection only applies when EVERY segment is short enough to be
+    // an identifier, so a long random tail keeps the assignment a secret.
+    const doppler = `doppler_token=dp.pt.${'aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW'}`
+    expect(scrubText(doppler, BUILTIN_RULES).text).toBe('[REDACTED:key-assignment]')
+  })
+
   it('rejects keywordless names, code shapes, and short values', () => {
     const negatives = [
       'monkey=aaaaaaaaaaaa',           // keyword only as a substring, not a `_` segment
       'token = 5',                     // spaces around = : code, not an assignment
       'token=computeToken()',          // short pure-letter value: an identifier
       'password=req.body.password',    // dotted identifier chain: a code traversal, not a secret
-      'token=response.data.token',     // dotted identifier chain: a code traversal, not a secret
+      'token=response.data.accessToken', // dotted identifier chain, camelCase segments
       'api_key=short',                 // value below the 8-char floor
       'password_store_dir=/home/u/.password-store', // deny-listed safe name
     ]
