@@ -293,13 +293,24 @@ export const BUILTIN_RULES: readonly SecretRule[] = [
   // `sk_…`) land here.
   { category: 'generic-sk-key', tier: 0, pattern: /\bsk[-_][A-Za-z0-9_-]{20,}\b/g },
   // Connection-URL authority: the whole `scheme://user:password@` span is
-  // replaced, leaving the host readable after the placeholder. The userinfo
-  // classes exclude `[` and `]` so a `[REDACTED:<category>]` placeholder
-  // emitted by an earlier rule is never re-consumed.
+  // replaced, leaving the host readable after the placeholder. URL parsing
+  // splits userinfo at the *last* `@` in the authority, so the password
+  // class admits `@` itself and the greedy run backtracks to that last `@`.
+  // Both classes stop at whitespace, `[`, `]` and at `/`, `?`, `#` — a raw
+  // separator there is not authority content, so such malformed userinfo is
+  // left unmatched (it must be percent-encoded; `%2F`, `%3F`, `%23` still
+  // match whole). They additionally exclude only `"`, which keeps the
+  // greedy run from crossing a JSON string boundary into a neighbouring
+  // value's `@`; a raw `"` in the userinfo is therefore not claimed (encode
+  // it as `%22`). Every other parser-tolerated userinfo character —
+  // `{ } | \ ^ < > backtick`, comma, semicolon, `=`, single quote — stays
+  // covered, so a real password never falls back to plaintext. The `[`/`]`
+  // exclusion means a `[REDACTED:<category>]` placeholder emitted by an
+  // earlier rule is never re-consumed.
   {
     category: 'url-credentials',
     tier: 0,
-    pattern: /(?:mysql|postgres|postgresql|mongodb|redis|amqp|rabbitmq|sftp|smtp):\/\/[^:\s[\]]*:[^@\s[\]]+@/gi,
+    pattern: /(?:mysql|postgres|postgresql|mongodb|redis|amqp|rabbitmq|sftp|smtp):\/\/[^:\s[\]"/?#]*:[^\s[\]"/?#]+@/gi,
   },
   // OAuth callback query token: the whole `?access_token=<value>` span is
   // replaced, including the parameter name.

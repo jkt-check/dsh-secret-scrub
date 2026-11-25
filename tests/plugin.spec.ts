@@ -190,6 +190,14 @@ describe('level gating (tool output)', () => {
     expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: 'key [REDACTED:aws-access-key]\n[REDACTED:env-var-secret]\nmail [REDACTED:email]\ntok [REDACTED:high-entropy]' }] })
   })
 
+  it('minimal redacts an at-sign password inside a connection URL authority', async () => {
+    // tier-2 email 在 minimal 下不生效,泄漏只能由 url-credentials 自己兜住。
+    const ctx = new Context()
+    await ctx.plugin(SecretScrub, { level: 'minimal' })
+    const decision = await postExecute(ctx, [{ type: 'text', text: 'db postgres://app:P@ssw0rd!Secret@localhost:5432/prod' }])
+    expect(decision).toEqual({ kind: 'accept', content: [{ type: 'text', text: 'db [REDACTED:url-credentials]localhost:5432/prod' }] })
+  })
+
   it('keeps extra rules active at minimal level', async () => {
     const ctx = new Context()
     await ctx.plugin(SecretScrub, { level: 'minimal', extra: [{ category: 'internal-token', pattern: 'internal-[0-9]{4}' }] })

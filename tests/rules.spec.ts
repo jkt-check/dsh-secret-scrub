@@ -339,10 +339,90 @@ describe('tier 1: key-assignment', () => {
 })
 
 describe('tier 0: URL forms', () => {
+  // url-credentials 单独验证:避免 tier-2 的 email 规则兜底掩盖 authority 内的泄漏。
+  const urlCredentials = BUILTIN_RULES.filter((rule) => rule.category === 'url-credentials')
+
   it('redacts the whole scheme://user:password@ authority of a connection URL', () => {
     const { text, redactions } = scrubText('db postgres://admin:s3cret@db.internal/app', BUILTIN_RULES)
     expect(text).toBe('db [REDACTED:url-credentials]db.internal/app')
     expect(redactions).toEqual({ 'url-credentials': 1 })
+  })
+
+  it('redacts a password containing @ up to the last @ in the authority', () => {
+    const cases: [string, string][] = [
+      ['postgres://app:P@ssw0rd!Secret@localhost:5432/prod', '[REDACTED:url-credentials]localhost:5432/prod'],
+      ['redis://user:my@Sup3rSecret@127.0.0.1:6379', '[REDACTED:url-credentials]127.0.0.1:6379'],
+      ['amqp://svc:P@rabbitHole99@rabbitmq:5672', '[REDACTED:url-credentials]rabbitmq:5672'],
+    ]
+    for (const [url, expected] of cases) {
+      const { text, redactions } = scrubText(url, urlCredentials)
+      expect(text).toBe(expected)
+      expect(redactions).toEqual({ 'url-credentials': 1 })
+    }
+  })
+
+  it('takes the last authority @ when the password embeds several', () => {
+    expect(scrubText('postgres://user:p@ss@word@host/db', urlCredentials).text)
+      .toBe('[REDACTED:url-credentials]host/db')
+  })
+
+  it('stops at the authority boundary in compact JSON instead of the next value @', () => {
+    const prose = '{"dsn":"postgres://u:user-AM9N11mc@db.internal:5432","mail":"user-CCu9u76e@example.com"}'
+    const { text, redactions } = scrubText(prose, urlCredentials)
+    expect(text).toBe('{"dsn":"[REDACTED:url-credentials]db.internal:5432","mail":"user-CCu9u76e@example.com"}')
+    expect(redactions).toEqual({ 'url-credentials': 1 })
+  })
+
+  it('keeps a colon and @ in the path from reading as userinfo', () => {
+    expect(scrubText('postgres://db.internal/a:b@c', urlCredentials).text)
+      .toBe('postgres://db.internal/a:b@c')
+  })
+
+  it('leaves raw /, ? or # inside the userinfo unmatched (malformed, encode instead)', () => {
+    for (const prose of [
+      'postgres://user:pa/ss@host',
+      'postgres://user:pa?ss@host',
+      'postgres://user:pa#ss@host',
+    ]) {
+      expect(scrubText(prose, urlCredentials).text).toBe(prose)
+    }
+  })
+
+  it('redacts a templated username with a real password', () => {
+    expect(scrubText('postgres://${DB_USER}:s3cret@host/db', urlCredentials).text)
+      .toBe('[REDACTED:url-credentials]host/db')
+  })
+
+  it('redacts parser-tolerated userinfo characters instead of leaving the secret plain', () => {
+    for (const char of ['{', '}', '|', '\\', '^', '<', '>', '`']) {
+      const url = `postgres://user:pa${char}user-v9e9mZaA@db.internal:5432/app`
+      expect(scrubText(url, urlCredentials).text).toBe('[REDACTED:url-credentials]db.internal:5432/app')
+    }
+  })
+
+  it('leaves a raw double quote in the userinfo unmatched (JSON boundary tradeoff)', () => {
+    // 原始 `"` 不认领:它用于阻止贪婪匹配跨过 JSON 字符串边界,须编码为 %22。
+    expect(scrubText('postgres://user:pa"ss@host', urlCredentials).text)
+      .toBe('postgres://user:pa"ss@host')
+  })
+
+  it('redacts percent-encoded separators and quotes in the password whole', () => {
+    for (const encoded of ['%2F', '%3F', '%23', '%22']) {
+      const url = `postgres://user:pa${encoded}ss@db.internal:5432/app`
+      expect(scrubText(url, urlCredentials).text).toBe('[REDACTED:url-credentials]db.internal:5432/app')
+    }
+  })
+
+  it('ends the authority at path/query/fragment so their @ cannot act as a separator', () => {
+    expect(scrubText('postgres://user:s3cret@db.internal/app?a@b#f@rag', urlCredentials).text)
+      .toBe('[REDACTED:url-credentials]db.internal/app?a@b#f@rag')
+    // 没有 authority 内的 @ 就不构成 userinfo,path/query 的 @ 原样保留。
+    expect(scrubText('postgres://db.internal/a@b', urlCredentials).text)
+      .toBe('postgres://db.internal/a@b')
+    expect(scrubText('redis://cache.internal/0?note=x@y', urlCredentials).text)
+      .toBe('redis://cache.internal/0?note=x@y')
+    // 空密码仍不匹配(`+` 语义不变)。
+    expect(scrubText('postgres://user:@host', urlCredentials).text).toBe('postgres://user:@host')
   })
 
   it('redacts the empty-username redis form and other listed schemes', () => {
