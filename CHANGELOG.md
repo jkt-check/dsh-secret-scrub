@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-11-25
+
+### Fixed
+
+- DSH 0.2.x refused to install the plugin: the four optional interface peers
+  (`@deepseek-ai/dsh-agent`, `dsh-llm`, `dsh-session`, `dsh-tools`) now accept
+  `>=0.1.2-alpha.2 <1.0.0` instead of `<0.2.0`. `@deepseek-ai/dsh-invariants`
+  is no longer a peer (still a devDependency; the `dsh-secret-scrub/invariant`
+  companion is unchanged), so it no longer constrains installation.
+
+### Tests
+
+- Use DSH's own compatibility evaluator for manifest regressions, covering
+  DSH 0.1.2-alpha.4, 0.2.2-rc.5, the later-0.x boundary, and rejection at
+  1.0.0. Verified the packed plugin with a real DSH 0.2.2-rc.5 installation.
+
 ## [0.1.2] — 2026-10-09
 
 Kaya-parity release: user input is now scrubbed aggressively by default, and
@@ -59,6 +75,7 @@ Initial release: irreversible regex scrubbing at `agent/pre-step`,
 table (`minimal`/`balanced`/`aggressive`), fail-loud config validation, and
 the standalone `dsh-secret-scrub/rules` engine export.
 
+[0.1.4]: https://github.com/jkt-check/dsh-secret-scrub/compare/665eee5...v0.1.4
 [0.1.2]: https://github.com/jkt-check/dsh-secret-scrub/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jkt-check/dsh-secret-scrub/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jkt-check/dsh-secret-scrub/releases/tag/v0.1.0

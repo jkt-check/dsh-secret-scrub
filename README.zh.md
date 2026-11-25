@@ -10,7 +10,7 @@
 npm install dsh-secret-scrub
 ```
 
-运行时依赖为 `@deepseek-ai/cordis`(peer）和 `@deepseek-ai/schemastery`。`@deepseek-ai/dsh-*` 系列 peer 包仅为类型依赖且可选。
+运行时依赖为 `@deepseek-ai/cordis`(peer）和 `@deepseek-ai/schemastery`。`@deepseek-ai/dsh-*` 系列 peer 包仅为类型依赖且可选。声明兼容的 dsh 版本范围为 `>=0.1.2-alpha.2 <1.0.0`；后续 0.x 版本能被安装并不代表已完成运行时验证，每个新主线版本都需要实际兼容性验证。
 
 ## 在 dsh profile 中使用
 
@@ -23,7 +23,7 @@ npm i -g @deepseek-ai/dsh
 # 2. 把插件装到目标 profile 里（以 headless 为例）
 dsh plugin --profile headless add dsh-secret-scrub
 #    发布前想测试本地改动，可用 npm pack 生成的 tarball：
-#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.2.tgz
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.4.tgz
 
 # 3. 重启该 profile 后，运行包含敏感信息的任务——密钥会在进入模型/会话日志前被脱敏
 dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE"

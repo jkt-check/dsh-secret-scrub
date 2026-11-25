@@ -10,7 +10,7 @@ Irreversible secret-scrubbing guard plugin, extracted from the user-sensitive-in
 npm install dsh-secret-scrub
 ```
 
-Runtime dependencies are `@deepseek-ai/cordis` (peer) and `@deepseek-ai/schemastery`. The `@deepseek-ai/dsh-*` peer packages are type-only and optional.
+Runtime dependencies are `@deepseek-ai/cordis` (peer) and `@deepseek-ai/schemastery`. The `@deepseek-ai/dsh-*` peer packages are type-only and optional. The declared dsh compatibility boundary is `>=0.1.2-alpha.2 <1.0.0`; admission on a later 0.x release does not mean that runtime has been verified — each new minor line needs an actual compatibility check.
 
 ## Use with dsh
 
@@ -23,7 +23,7 @@ npm i -g @deepseek-ai/dsh
 # 2. Install this plugin into the target profile (headless shown as an example)
 dsh plugin --profile headless add dsh-secret-scrub
 #    To test local changes before publishing, use the tarball from `npm pack`:
-#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.2.tgz
+#    dsh plugin --profile headless add /path/to/dsh-secret-scrub-0.1.4.tgz
 
 # 3. Restart the profile, then run a task that contains secrets — they will be redacted before reaching the model/session log
 dsh --profile headless "echo AWS AKIAIOSFODNN7EXAMPLE"
